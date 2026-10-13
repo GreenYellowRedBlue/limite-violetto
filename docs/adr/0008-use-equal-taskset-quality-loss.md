@@ -1,0 +1,17 @@
+---
+status: accepted
+---
+
+# Use equal-taskset headline correctness for overall quality loss
+
+The user accepted an overall quality endpoint giving each declared taskset equal weight, using that taskset's existing headline correctness and per-problem mean-of-rollout policy. Preserve its declared scorer/anchor and defined fallback, problem set, rollout grouping, and overlap caveats; keep all per-taskset results visible. Pooling rollouts would instead give larger datasets or larger rollout groups more influence, while choosing a favorable scorer would change the measurement being qualified.
+
+Define loss as CUDA headline score minus Vulkan headline score, averaged over the fixed taskset set; gains therefore have negative loss. The user accepted a claim about expected stochastic correctness on the complete frozen `math-extended` corpus, not a guarantee on unseen mathematical problems. Preserve every required taskset, scorer/grouping rule and overlap caveat rather than treating the benchmark as a random sample of all mathematics.
+
+The user accepted one predeclared claim-bearing analysis per platform and release candidate after frozen coverage is complete, with exploratory pilots kept separate. Apply a one-sided 95% upper-bound criterion with a two-percentage-point loss margin; insufficient evidence remains pending. Additional claim-bearing looks require predeclared error allocation or a valid sequential method, not repeated ordinary intervals until one passes. Windows and Linux have separate claims, not an automatic joint 95% guarantee.
+
+The user accepted a qualification-only immutable manifest of independently randomized paired CUDA/Vulkan request seeds and the conservative weighted independent-cluster Hoeffding upper bound derived in the [confidence research note](../specs/limite-vulkan-confidence-research.md). Keep all fixed memberships, weights, scorers and rollout rules, preserve historical/default CUDA seed behavior, and freeze the candidate, seed distribution, execution profile, dependence clusters, complete coverage and analysis before claim-bearing outputs. Independence between clusters is a required experimental property, not something proved by distinct seed values; merge actual shared outcomes/randomness/state and retain pending status when an informative bound is unsupported. Ordinary operational CUDA remains the reference, and any isolated profile must be explicit rather than a favorable diagnostic substitution.
+
+The user accepted blocking release while a statistically supported taskset loss above five percentage points remains unresolved, even when the overall macro gate passes. Predeclare multiplicity-aware taskset checks; the conservative default is one-sided taskset lower bounds with a Bonferroni allocation across the fixed taskset family, using the same justified cluster experiment. Fix and requalify a supported severe regression rather than waive it through aggregate compensation. This is deliberately stricter than the brief's investigate-only wording.
+
+Actual seed/cluster/profile provenance, corpus and coverage records, claim-family error allocation, CUDA reference access and paired platform executions remain qualification prerequisites. The mathematical guarantee is conditional on the declared experiment and assumptions; no model score, empirical coverage result or quality bound has been measured, and this decision does not authorize production implementation.
