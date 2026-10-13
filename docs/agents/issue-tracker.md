@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo live in GitHub Issues on `GreenYellowRedBlue/limite-violetto`. Use the `gh` CLI for all tracker operations, and always pass `--repo GreenYellowRedBlue/limite-violetto` explicitly. Do not rely on the current checkout's default repository: it may resolve to the upstream repository.
+Issues and specs for this repo live in GitHub Issues on `GreenYellowRedBlue/limite-violetto`. Use the `gh` CLI for all tracker operations, and always pass `--repo GreenYellowRedBlue/limite-violetto` on commands that support it. `gh api` has no `--repo` flag: use the full `repos/GreenYellowRedBlue/limite-violetto/...` endpoint instead. Never rely on the current checkout's default repository: it may resolve to upstream.
 
 ## Conventions
 
@@ -40,3 +40,16 @@ Used by `/wayfinder`. The **map** is a single issue with child issues as tickets
 - **Blocking**: use GitHub's native issue dependencies (`gh issue edit <child> --repo GreenYellowRedBlue/limite-violetto --add-blocked-by <blocker>`). Where unavailable, use a `Blocked by: #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
 - **Claim**: `gh issue edit <number> --repo GreenYellowRedBlue/limite-violetto --add-assignee @me`.
 - **Resolve**: for implementation tickets, merge a PR into this fork's `main` with `Closes #<number>`; for non-implementation tickets, comment with the answer and close the issue. Then append a context pointer (gist + link) to the map's Decisions-so-far.
+
+- **Decision labels**: a wayfinder map and its children carry only their `wayfinder:*` label, never triage/implementation labels. Read the child's label to select its skill.
+- **Research assets**: publish findings on unmerged disposable `research/*` branches, link immutable commit/file URLs from resolution comments, and open no PR. Closing a source investigation does not validate downstream hardware feasibility.
+- **Frontier**: list the map's native children, keep open/unassigned children, then inspect each child's native blockers and keep it only when every blocker is closed. Relationship counts alone do not establish whether blockers remain open.
+
+Use the chosen map and child issue numbers as parameters in these fully fork-scoped API calls:
+
+```text
+gh api repos/GreenYellowRedBlue/limite-violetto/issues/<map-number>/sub_issues?per_page=100 --paginate
+gh api repos/GreenYellowRedBlue/limite-violetto/issues/<child-number>/dependencies/blocked_by?per_page=100 --paginate
+```
+
+Preserve the map's native child order when selecting its first frontier ticket. Claim it before work. Append only a named gist/link for a resolved child to the map; do not copy its answer or enumerate open children in the map body. Use the full title wrapped around its link in human-facing discussion, not a bare issue number.
