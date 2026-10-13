@@ -1,0 +1,55 @@
+# Cache and allocator evidence: full-context hybrid cache
+
+## Scope and identities
+
+This report addresses [Assess full-context hybrid cache and allocator feasibility](https://github.com/GreenYellowRedBlue/limite-violetto/issues/5), using the [accepted brief](https://github.com/GreenYellowRedBlue/limite-violetto/blob/173c50ea1f11b4b68ad8eb350b40c8b464ae64d5/docs/specs/limite-vulkan-spec.md) and ADRs at `173c50ea1f11b4b68ad8eb350b40c8b464ae64d5`, candidate llama.cpp `296538adea19ff397100bf8e7d71f302d2d2bb35`, and the official [Violetto source snapshot](https://huggingface.co/paradigma-inc/limite-1b-violetto/tree/9f4d1567975a44c35127503deadfe52d434d734f). Source identity is not runtime qualification.
+
+## Source evidence and semantic constraints
+
+| Area | Pinned-source evidence | Consequence / status |
+|---|---|---|
+| Cache segmentation | Candidate [`llama-kv-cache-iswa.cpp`](https://github.com/ggml-org/llama.cpp/blob/296538adea19ff397100bf8e7d71f302d2d2bb35/src/llama-kv-cache-iswa.cpp#L40-L107) filters global/non-SWA and SWA layers separately. Its `size_swa` calculation is `PAD(min(size_base, n_swa * (unified ? n_seq_max : 1) + n_ubatch), 256)`. Sequence operations apply to both classes. | Candidate architecture is a source reference only; it does not establish Violetto's correctness, admission or residency. Microbatch and sequence-count terms affect local allocation; 256 alignment contributes padding. |
+| Partial state | The same file's state code [marks/handles partial state](https://github.com/ggml-org/llama.cpp/blob/296538adea19ff397100bf8e7d71f302d2d2bb35/src/llama-kv-cache-iswa.cpp#L257-L270); partial-only operations intentionally skip global/base state. | A partial restore is not equivalent to full restore. Full-state capture/restore must include global and local cache components and preserve absolute positions and metadata; restore equivalence requires parity tests. |
+| Local span | Candidate [`llama-hparams.h`](https://github.com/ggml-org/llama.cpp/blob/296538adea19ff397100bf8e7d71f302d2d2bb35/src/llama-hparams.h#L497-L510) defines STANDARD mask exclusion when `p1 - p0 >= n_swa`. Violetto model source specifies local distance 1,024. | Distance 1,024 means 1,025 visible positions including the current/oldest boundary as specified by the model. Treating 1,024 as the capacity/count risks dropping the oldest permitted key. Absolute position and RoPE position must not be rebased by local eviction. |
+| Cache writes and V | Violetto's accepted model semantics place V after value embedding; cache writes must be chunk-safe and preserve absolute positions. | Cache layout/append path must store post-value-embedding V. Test one-token and multi-token/chunk writes against the reference; no source observation establishes that a candidate path satisfies these semantics. |
+| Cancellation, reclamation, prefix | Accepted serving semantics require cancellation to reclaim all request-owned state, including any terminal raw prefix; slot release alone is insufficient. Prefix reuse remains disabled until full-state parity. | Verify no stale K/V, sequence metadata, position state or ownership survives cancellation; do not enable prefix reuse based only on partial state. Context shifting is disabled. |
+| Tensor allocation | Candidate [`ggml-backend.cpp`](https://github.com/ggml-org/llama.cpp/blob/296538adea19ff397100bf8e7d71f302d2d2bb35/ggml/src/ggml-backend.cpp#L56-L180) default tensor-list allocation splits at tensor boundaries, not inside a single oversized tensor. | Many tensors may be spread across buffers, but one tensor exceeding a backend/device buffer limit is not rescued by tensor-list splitting. Inspect actual segmentation and largest individual tensor. |
+| Vulkan buffer bound | Candidate [`ggml-vulkan-buffers.cpp`](https://github.com/ggml-org/llama.cpp/blob/296538adea19ff397100bf8e7d71f302d2d2bb35/ggml/src/ggml-vulkan/ggml-vulkan-buffers.cpp) checks device maximum allocation/buffer size. The [prior review](https://github.com/GreenYellowRedBlue/limite-violetto/blob/173c50ea1f11b4b68ad8eb350b40c8b464ae64d5/docs/specs/limite-vulkan-design-review.md#discoverable-hardware-and-resource-access) records a partial Windows 2 GiB limit, not a universal or complete-profile measurement. | Query actual target limits and exercise every individual allocation. Source checks and the old partial observation do not establish full-context residency. |
+
+## Explicit planning arithmetic (not measurement)
+
+Assume BF16 K and V, two K/V heads and head width 128: `2 tensors × 2 heads × 128 dimensions × 2 bytes = 1,024 bytes` per stored token per layer. Ideal arithmetic for 131,072 global tokens across 12 layers is `1,024 × 131,072 × 12 = 1,610,612,736 bytes`. Ideal local storage at 1,025 positions across 36 layers is `1,024 × 1,025 × 36 = 37,785,600 bytes`.
+
+For the candidate's cited sizing formula, a one-sequence, 512-token microbatch local span gives `1,025 + 512 = 1,537`, then PAD to 256 slots gives 1,792 slots. That planning amount is `1,024 × 1,792 × 36 = 66,060,288 bytes`. This is padded cache arithmetic, not an observed allocation or admission result. It is not a total-memory estimate: exclude no costs silently. It omits model and derived/folded weights, non-cache graph/workspace and scratch, staging/transfers, metadata, allocator/device alignment beyond the stated cache-slot padding, fragmentation, concurrency/multiple sequences, and any implementation-specific layout/duplication. Actual tensor segmentation and allocation boundaries can change the result. No arithmetic here proves residency, admission, or 131,072-token support.
+
+A naive materialized FP32 global-attention score tile at 10 query heads, 512 queries and 131,072 keys would require `10 × 512 × 131072 × 4 = 2,684,354,560 bytes` (2.5 GiB), exceeding the prior partial Windows 2 GiB individual-buffer limit. This is shape arithmetic, not an assertion that the selected native attention allocates that tensor. It makes bounded/tiled or flash-attention workspace an explicit full-context diagnostic obligation; persistent K/V arithmetic alone cannot prove feasibility.
+
+## Reuse and gaps
+
+| Property | Classification |
+|---|---|
+| Separate global/local layer selection, sizing pattern and sequence operations | Reusable as candidate-source design evidence only; semantic parity and allocation behavior conditional. |
+| 1,025 local visible positions for distance 1,024; absolute positions; post-value-embedding V; chunk-safe writes | Required model invariants; not established by candidate-source resemblance. |
+| Full restore | Required. Partial-only restore cannot stand in for it because the candidate intentionally skips global/base state in partial mode. |
+| Cancellation/reclamation | Required end-to-end ownership cleanup including terminal raw prefix and metadata; not established by releasing a slot alone. |
+| Prefix reuse | Disabled pending full-state parity; no qualification from source evidence. |
+| Splitting allocations | Tensor-list allocator can split between tensors; cannot split one oversized tensor. Actual tensor sizes, backend buffer limits and Windows behavior remain unmeasured. |
+| 64-token pages / 512 MiB slabs | Candidate probe choices only, not inherited requirements or established optimal values. |
+
+## Disposable falsification checklist
+
+Run only as isolated diagnostics, not production behavior; record source revision, device/driver, allocator parameters, shapes, requested bytes, actual buffer sizes, failures, and cleanup outcome.
+
+1. **Inventory and bounds:** enumerate each cache tensor by layer class, K/V, shape, dtype, strides and bytes; report the largest indivisible tensor. Compare every requested Vulkan buffer against the queried `maxMemoryAllocationSize`/buffer limits and record which allocation fails, if any. Repeat relevant individual-allocation cases around the observed 2 GiB boundary without treating it as universal.
+2. **Planning versus allocation:** allocate global/local cache separately and together for the 131,072-token target and the 1,025-position local window; sweep microbatch, sequence count/concurrency and alignment. Compare ideal arithmetic, candidate padded sizing and actual allocated bytes. Explicitly account for weights/derived weights, workspace, staging and allocator overhead before any residency claim.
+   Include actual attention/mask/reduction workspace and dispatch duration, not only cache buffers. Verify that configured context, sequence count and unified/non-unified KV choices permit one complete 131,072-token request rather than silently dividing its context allowance among slots; four concurrent shorter requests remain a separate requirement.
+3. **Mask boundary and position:** for distance 1,024, verify the oldest allowed key remains visible at every tested absolute position and the next older key is masked; cover wrap/eviction and chunk boundaries. Compare masks and RoPE positions with the canonical model path.
+4. **Writes and V:** compare one-token versus chunked cache writes for identical token sequences; confirm V stored is post-value-embedding, and K/V values, positions, and resulting attention agree with the reference.
+5. **Restore:** serialize/restore both full and partial state. Falsify equivalence if partial restore omits global state or metadata; full restore must reproduce outputs and future cache behavior including absolute positions.
+6. **Cancellation and ownership:** cancel during prefill and decode, including after a raw terminal prefix exists; confirm all request-owned cache entries, sequence/position metadata and allocator references are reclaimed, and a subsequent request cannot observe stale state.
+7. **Prefix gate:** keep prefix reuse disabled. Before any proposed enablement, compare full-state capture/restore and reused-prefix continuation against fresh execution across global/local layers, masks, positions and output IDs; any mismatch falsifies parity.
+8. **Reclamation stress:** repeat allocate/append/evict/cancel/restore cycles, including allocation failure paths; record bounded allocator usage and absence of live stale references. This is diagnostic evidence, not qualification.
+
+## Resolution and evidence limits
+
+The source question is answered: the candidate offers a split global/SWA sizing pattern, but its partial-state behavior, mask boundary, allocation granularity and device limits expose specific parity and allocation risks. The supplied arithmetic is explicitly ideal/padded planning, not measured residency, admission, or support. No build, GPU run, allocator probe, or full-context qualification was performed here. The conclusion does **not** assert cache support, residency or feasibility. [Test full-context cache assumptions with disposable diagnostics](https://github.com/GreenYellowRedBlue/limite-violetto/issues/11) is the downstream falsification work; prefix reuse remains disabled until full-state parity.
